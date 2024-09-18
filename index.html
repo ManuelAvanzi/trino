@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Mini Player</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: rgba(173, 216, 230, 0.6); /* Più trasparente rispetto a prima */
+        }
+
+        #header {
+            width: 100%;
+            background-color: rgba(128, 128, 128, 0.7);
+            padding: 15px;
+            box-sizing: border-box;
+            text-align: center;
+            position: fixed;
+            top: 0;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        #controls {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: rgba(100, 149, 237, 0.8); /* Colore azzurro più intenso per l'area controlli */
+            border-radius: 10px;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            max-width: 90%;
+        }
+
+        #controls label {
+            margin-right: 10px;
+        }
+
+        #controls input[type="range"],
+        #controls input[type="color"],
+        #controls input[type="file"] {
+            margin: 5px 0;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 10px;
+        }
+
+        #canvas-container {
+            margin-top: 52px; /* Alza il canvas di circa il 15% */
+            width: 690px;  /* Aumenta del 15% rispetto a 600px */
+            height: 460px; /* Aumenta del 15% rispetto a 400px */
+            border-radius: 15px;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        Mini Player
+    </div>
+
+    <!-- Il player three.js -->
+    <div id="canvas-container">
+        <canvas id="threejs-canvas"></canvas>
+    </div>
+
+    <!-- Controlli per il colore, velocità, caricamento file, luminosità oggetti, colore sfondo e modello GLB sfera -->
+    <div id="controls">
+        <div>
+            <label for="color">Colore del cubo:</label>
+            <input type="color" id="color" value="#ff0000">
+        </div>
+        <div>
+            <label for="speed">Velocità di rotazione:</label>
+            <input type="range" id="speed" min="0" max="0.1" step="0.01" value="0.0">
+        </div>
+        <div>
+            <label for="brightness">Luminosità oggetti:</label>
+            <input type="range" id="brightness" min="0.1" max="3" step="0.1" value="1">
+        </div>
+        <div>
+            <label for="bgBrightness">Luminosità sfondo:</label>
+            <input type="range" id="bgBrightness" min="0.1" max="10" step="0.1" value="1">
+        </div>
+        <div>
+            <label for="bgFile">Carica sfera in formato GLB:</label>
+            <input type="file" id="bgFile" accept=".glb">
+        </div>
+        <div>
+            <label for="file">Carica modello GLB/GLTF:</label>
+            <input type="file" id="file" accept=".glb, .gltf">
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script>
+        // Variabili iniziali
+        let scene, camera, renderer, cube, rotationSpeed = 0;
+        let currentObject; // Oggetto attualmente nella scena (cubo o modello caricato)
+        let ambientLight; // Luce ambientale
+        let controls; // Controlli orbitali
+        let backgroundSphere; // Sfera di sfondo GLB
+        let backgroundSphereMaterial; // Materiale della sfera di sfondo per la luminosità
+
+        // Funzione di inizializzazione di Three.js
+        function init() {
+            // Crea scena
+            scene = new THREE.Scene();
+
+            // Crea la camera
+            camera = new THREE.PerspectiveCamera(75, 690 / 460, 0.1, 1000); // Cambia proporzione per adattarla al canvas
+            camera.position.z = 5;
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('threejs-canvas') });
+            renderer.setSize(690, 460); // Dimensioni del canvas aumentate del 15%
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // Creazione del cubo
+            const geometry = new THREE.BoxGeometry();
+            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            cube = new THREE.Mesh(geometry, material);
+            currentObject = cube;
+            scene.add(cube);
+
+            // Aggiungi luce ambientale
+            ambientLight = new THREE.AmbientLight(0xffffff, 1); // Luce bianca con intensità iniziale 1
+            scene.add(ambientLight);
+
+            // Aggiungi luce direzionale per illuminare il modello
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 5, 5).normalize();
+            scene.add(directionalLight);
+
+            // Inizializza i controlli orbitali
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // Smoothing nel movimento
+            controls.dampingFactor = 0.05; // Velocità di "smorzamento"
+            controls.screenSpacePanning = false; // Blocca il panning orizzontale
+            controls.minDistance = 2; // Distanza minima dalla scena
+            controls.maxDistance = 50; // Distanza massima dalla scena
+
+            // Inizio animazione
+            animate();
+        }
+
+        // Funzione di animazione
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Rotazione solo se la velocità è maggiore di 0
+            if (currentObject && rotationSpeed > 0) {
+                currentObject.rotation.x += rotationSpeed;
+                currentObject.rotation.y += rotationSpeed;
+            }
+
+            // Aggiorna i controlli orbitali
+            controls.update();
+
+            renderer.render(scene, camera);
+        }
+
+        // Cambia colore del cubo
+        document.getElementById('color').addEventListener('input', function (event) {
+            if (cube) {
+                cube.material.color.set(event.target.value);
+            }
+        });
+
+        // Cambia velocità di rotazione
+        document.getElementById('speed').addEventListener('input', function (event) {
+            rotationSpeed = parseFloat(event.target.value);
+        });
+
+        // Regola la luminosità della scena (intensità della luce ambientale)
+        document.getElementById('brightness').addEventListener('input', function (event) {
+            const brightness = parseFloat(event.target.value);
+            ambientLight.intensity = brightness;
+        });
+
+        // Carica sfera GLB e posiziona la scena all'interno
+        document.getElementById('bgFile').addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const contents = e.target.result;
+
+                    // Carica la sfera di sfondo con GLTFLoader
+                    const loader = new THREE.GLTFLoader();
+                    loader.parse(contents, '', function (gltf) {
+                        if (backgroundSphere) {
+                            scene.remove(backgroundSphere); // Rimuovi la sfera precedente se esiste
+                        }
+
+                        // Aggiungi la nuova sfera di sfondo alla scena
+                        backgroundSphere = gltf.scene;
+                        backgroundSphere.traverse(function (node) {
+                            if (node.isMesh) {
+                                backgroundSphereMaterial = node.material; // Salva il materiale della sfera
+                            }
+                        });
+                        backgroundSphere.scale.set(500, 500, 500); // Ridimensiona la sfera per essere molto grande
+                        scene.add(backgroundSphere);
+                    });
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        // Regola la luminosità della sfera di sfondo
+        document.getElementById('bgBrightness').addEventListener('input', function (event) {
+            const brightness = parseFloat(event.target.value);
+            if (backgroundSphereMaterial) {
+                backgroundSphereMaterial.emissive = new THREE.Color(0xffffff); // Imposta un colore emissivo bianco
+                backgroundSphereMaterial.emissiveIntensity = brightness; // Regola l'intensità dell'emissione
+                backgroundSphereMaterial.needsUpdate = true; // Aggiorna il materiale
+            }
+        });
+
+        // Carica file GLB/GLTF
+        document.getElementById('file').addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const contents = e.target.result;
+
+                    // Carica modello con GLTFLoader
+                    const loader = new THREE.GLTFLoader();
+                    loader.parse(contents, '', function (gltf) {
+                        // Rimuovi l'oggetto corrente dalla scena
+                        scene.remove(currentObject);
+
+                        // Aggiungi il nuovo modello alla scena
+                        currentObject = gltf.scene;
+                        currentObject.scale.set(1, 1, 1); // Regola la scala se necessario
+                        scene.add(currentObject);
+                    });
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        // Inizializza Three.js
+        init();
+    </script>
+</body>
+</html>
